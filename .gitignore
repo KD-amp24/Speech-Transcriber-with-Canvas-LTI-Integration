@@ -21,3 +21,25 @@ instance/
 
 # OS
 Thumbs.db
+
+# Sensitive key files
+keys/
+*.key
+
+# Audio files
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.webm
+*.aac
+*.ogg
+*.opus
+*.m4a
+
+# Optional: exclude uploads folder if used for audio
+uploads/
+
+# PDF files
+*.pdf
+

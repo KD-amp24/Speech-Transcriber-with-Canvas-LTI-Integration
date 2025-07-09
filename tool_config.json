@@ -1,0 +1,27 @@
+{
+  "title": "Oral Response Evaluator",
+  "scopes": [
+    "https://purl.imsglobal.org/spec/lti-ags/scope/lineitem",
+    "https://purl.imsglobal.org/spec/lti-ags/scope/result.readonly",
+    "https://purl.imsglobal.org/spec/lti-ags/scope/score"
+  ],
+  "extensions": [
+    {
+      "platform": "canvas.instructure.com",
+      "settings": {
+        "platform": "canvas.instructure.com",
+        "placements": [
+          {
+            "placement": "assignment_selection",
+            "message_type": "LtiResourceLinkRequest",
+            "target_link_uri": "https://f2a7-143-132-2-2.ngrok-free.app/lti/launch"
+          }
+        ]
+      },
+      "privacy_level": "LtiPrivacyLevel.Public"
+    }
+  ],
+  "public_jwk_url": "https://f2a7-143-132-2-2.ngrok-free.app/keys",
+  "target_link_uri": "https://f2a7-143-132-2-2.ngrok-free.app/lti/launch",
+  "oidc_initiation_url": "https://f2a7-143-132-2-2.ngrok-free.app/lti/login"
+}

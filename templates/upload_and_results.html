@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Oral Response Evaluator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>🎙️ Oral Response Evaluator</h1>
+
+        {% if transcript %}
+            <section class="results">
+                <h2>Transcription</h2>
+                <p class="transcript">{{ transcript }}</p>
+
+                <h2>Evaluation</h2>
+                <ul class="evaluation">
+                    <li><strong>Word Count:</strong> {{ evaluation.word_count }}</li>
+                    <li><strong>Contains "important":</strong> {{ evaluation.contains_keyword }}</li>
+                    
+                    {% if evaluation.rubric_score is defined %}
+                        <li><strong>Rubric Score:</strong> {{ evaluation.rubric_score }} / {{ total_rubric }}</li>
+                        <li><strong>Feedback:</strong>
+                            <ul class="feedback">
+                                {% for fb in evaluation.rubric_feedback %}
+                                    <li>{{ fb }}</li>
+                                {% endfor %}
+                            </ul>
+                        </li>
+                    {% endif %}
+                </ul>
+
+                <a class="button" href="{{ url_for('upload_audio') }}">Upload another file</a>
+            </section>
+        {% else %}
+            <section class="upload-form">
+                <h2>Upload an audio file</h2>
+                <form method="post" enctype="multipart/form-data">
+                    <input type="file" name="audio_file" accept=".mp3,.wav,.m4a,.webm" required>
+                    <button type="submit">Transcribe</button>
+                </form>
+
+                <hr>
+
+                <h2>Or Record Speech</h2>
+                <div class="record-controls">
+                    <button id="recordBtn">🎙️ Start Recording</button>
+                    <button id="stopBtn" disabled>⏹️ Stop</button>
+                    <p id="recordingStatus"></p>
+                </div>
+            </section>
+        {% endif %}
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

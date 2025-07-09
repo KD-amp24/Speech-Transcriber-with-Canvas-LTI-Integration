@@ -1,0 +1,208 @@
+from flask import Flask, request, jsonify, send_file, redirect, session, render_template_string, url_for
+from pylti1p3.tool_config import ToolConfJsonFile
+from pylti1p3.contrib.flask import FlaskRequest, FlaskCacheDataStorage, FlaskMessageLaunch, FlaskSessionService, FlaskCookieService
+from pylti1p3.exception import LtiException
+from flask_caching import Cache  # Added import for caching
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from functools import wraps
+from werkzeug.utils import secure_filename
+from pylti1p3.oidc_login import OIDCLogin
+import os
+import json
+import tempfile
+
+# Import your transcription logic
+from whisper_eval import transcribe_and_evaluate
+
+print("Working directory:", os.getcwd())
+
+app = Flask(__name__)
+app.secret_key = 'your_super_secret_key'  # Change this to a strong random key!
+
+# Flask-Caching for LTI state storage
+flask_cache = Cache(app, config={'CACHE_TYPE': 'SimpleCache'})
+cache = FlaskCacheDataStorage(flask_cache)
+
+# Flask-Limiter for rate limiting
+limiter = Limiter(get_remote_address, app=app, default_limits=["10 per minute"])
+
+# Session security config
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    SESSION_COOKIE_SECURE=False,  # Set to True in production with HTTPS
+    MAX_CONTENT_LENGTH=10 * 1024 * 1024  # 10MB upload limit
+)
+
+# Allowed file types
+ALLOWED_EXTENSIONS = {'wav', 'mp3', 'm4a', 'mp4'}
+
+UPLOAD_FOLDER = "uploads"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+LTI_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'tool_config.json')
+LTI_KEYS_PATH = os.path.join(os.path.dirname(__file__), 'keys')
+LTI_ISSUER = "https://canvas.instructure.com"
+
+tool_config = ToolConfJsonFile("tool_config_backend.json")
+
+# Utility functions
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def lti_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'launch_id' not in session:
+            return redirect(url_for('lti_login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+# ----- LTI ROUTES -----
+
+@app.route("/lti/login", methods=["GET"])
+def lti_login():
+    try:
+        flask_request = FlaskRequest(request)
+        session_service = FlaskSessionService(flask_request)
+        cookie_service = FlaskCookieService(flask_request)
+        oidc_login = OIDCLogin(flask_request, tool_config, session_service, cookie_service)
+        return oidc_login.redirect(flask_request)
+    except Exception as e:
+        return f"OIDC login error: {e}", 400
+
+@app.route("/lti/launch", methods=["POST"])
+def lti_launch():
+    try:
+        flask_request = FlaskRequest(request)
+        message_launch = FlaskMessageLaunch(flask_request, tool_config, cache).verify()
+        session['launch_id'] = message_launch.get_launch_id()
+        user_info = message_launch.get_launch_data().get("https://purl.imsglobal.org/spec/lti/claim/custom", {})
+        return f"✅ LTI Launch Success! Hello {user_info.get('user_id', 'student')}."
+    except LtiException as e:
+        return f"LTI Launch error: {e}", 400
+
+@app.route("/keys", methods=["GET"])
+def jwks():
+    jwk_file = os.path.join(LTI_KEYS_PATH, "jwks.json")
+    if os.path.exists(jwk_file):
+        with open(jwk_file, "r") as f:
+            jwks_data = json.load(f)
+        return jsonify(jwks_data)
+    else:
+        return jsonify({"error": "JWKS not found"}), 404
+
+@app.route("/tool_config.json", methods=["GET"])
+def serve_tool_config():
+    return send_file("tool_config.json", mimetype="application/json")
+
+@app.route("/")
+def index():
+    return "🎙️ Oral Response Evaluator is running!"
+
+# ----- TRANSCRIPTION API ROUTE -----
+
+@limiter.limit("3 per minute")
+@app.route("/transcribe", methods=["POST"])
+@lti_required
+def transcribe():
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+
+    file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"error": "Empty filename"}), 400
+
+    if not allowed_file(file.filename):
+        return jsonify({"error": "Invalid file type"}), 400
+
+    filename = secure_filename(file.filename)
+    file_path = os.path.join(UPLOAD_FOLDER, filename)
+    file.save(file_path)
+
+    try:
+        result = transcribe_and_evaluate(file_path)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# ----- NEW: WEB UI FOR AUDIO UPLOAD & TRANSCRIPTION -----
+
+UPLOAD_FORM = """
+<!doctype html>
+<title>Upload Audio for Transcription</title>
+<h1>Upload audio file (mp3, wav, etc.)</h1>
+<form method=post enctype=multipart/form-data>
+  <input type=file name=audio_file required>
+  <input type=submit value=Upload>
+</form>
+"""
+
+RESULTS_PAGE = """
+<!doctype html>
+<title>Transcription Results</title>
+<h1>Transcription</h1>
+<p>{{ transcript }}</p>
+
+<h2>Evaluation</h2>
+<ul>
+  <li>Word Count: {{ evaluation.word_count }}</li>
+  <li>Contains "important": {{ evaluation.contains_keyword }}</li>
+  {% if evaluation.rubric_score is defined %}
+  <li>Rubric Score: {{ evaluation.rubric_score }} / {{ total_rubric }}</li>
+  <li>Feedback:</li>
+  <ul>
+    {% for fb in evaluation.rubric_feedback %}
+      <li>{{ fb }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</ul>
+
+<a href="{{ url_for('upload_audio') }}">Upload another file</a>
+"""
+
+@app.route("/upload", methods=["GET", "POST"])
+@lti_required
+def upload_audio():
+    if request.method == "POST":
+        if 'audio_file' not in request.files:
+            return "No audio_file part", 400
+
+        file = request.files['audio_file']
+        if file.filename == '':
+            return "No selected file", 400
+
+        if not allowed_file(file.filename):
+            return "Invalid file type", 400
+
+        filename = secure_filename(file.filename)
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1]) as tmp:
+            file.save(tmp.name)
+            temp_path = tmp.name
+
+        try:
+            result = transcribe_and_evaluate(temp_path)
+        finally:
+            os.remove(temp_path)
+
+        evaluation = result.get("evaluation", {})
+        if "score" in evaluation and "feedback" in evaluation:
+            evaluation["rubric_score"] = evaluation["score"]
+            evaluation["rubric_feedback"] = evaluation["feedback"]
+
+        return render_template_string(
+            RESULTS_PAGE,
+            transcript=result.get("transcript", ""),
+            evaluation=evaluation,
+            total_rubric=4
+        )
+    else:
+        return UPLOAD_FORM
+
+# ----- MAIN -----
+if __name__ == "__main__":
+    app.run(debug=False, port=5000)

@@ -80,9 +80,9 @@ Pull requests are welcome! For major changes, please open an issue first.
 
 ## 👨‍🏫 Supervision & Acknowledgment
 
-Developed by **Kwadwo Amponsah Ampofo**, Master’s student at Jackson State University  
+Developed by **Kwadwo Amponsah Ampofo**, graduate student at Jackson State University  
 Supervised by **Dr. Wei Zheng**, Department of Civil Engineering  
-Powered by OpenAI Whisper
+Powered by SYSTRAN's FASTER Whisper
 
 ## 📜 License
 

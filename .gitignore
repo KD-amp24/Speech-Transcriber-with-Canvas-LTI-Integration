@@ -35,6 +35,10 @@ keys/
 *.aac
 *.ogg
 *.opus
+*.m4a
 
 # Optional: exclude uploads folder if used for audio
 uploads/
+
+*.pdf
+*.key

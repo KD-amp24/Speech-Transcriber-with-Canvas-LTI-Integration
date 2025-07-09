@@ -40,5 +40,6 @@ keys/
 # Optional: exclude uploads folder if used for audio
 uploads/
 
+# PDF files
 *.pdf
-*.key
+
